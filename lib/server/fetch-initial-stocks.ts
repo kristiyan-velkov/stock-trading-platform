@@ -1,8 +1,6 @@
 import { fetchStockData } from "./api";
 import type { Stock } from "../types";
-
-const sanitizeNumber = (value: unknown, fallback = 0): number =>
-  typeof value === "number" && !isNaN(value) ? value : fallback;
+import { sanitizeNumber } from "../utils/stock";
 
 export async function getInitialStocks(symbols: string[]): Promise<Stock[]> {
   const rawData = await fetchStockData(symbols);

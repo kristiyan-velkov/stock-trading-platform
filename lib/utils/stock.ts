@@ -71,3 +71,6 @@ export const safeParseFloat = (value: any, fallback = 0): number => {
   const parsed = parseFloat(value);
   return isNaN(parsed) ? fallback : parsed;
 };
+
+export const sanitizeNumber = (value: unknown, fallback = 0): number =>
+  typeof value === "number" && !isNaN(value) ? value : fallback;

@@ -24,14 +24,14 @@ const customJestConfig = {
     [
       "jest-junit",
       {
-        outputDirectory: "./test-results",
+        outputDirectory: "./coverage/test-results",
         outputName: "junit.xml",
       },
     ],
     [
       "jest-html-reporters",
       {
-        publicPath: "./test-reports",
+        publicPath: "./coverage/test-reports",
         filename: "report.html",
         expand: true,
       },
