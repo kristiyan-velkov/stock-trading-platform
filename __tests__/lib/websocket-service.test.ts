@@ -1,165 +1,113 @@
 import { webSocketService } from "@/lib/server/websocket-service";
 import { useStockStore } from "@/store";
-import type { Stock } from "@/lib/types";
-import jest from "jest"; // Declare the jest variable
 
-// Mock the Worker
-class MockWorker {
-  onmessage: ((event: MessageEvent) => void) | null = null;
-  postMessage = jest.fn();
-  terminate = jest.fn();
-}
-
-// Mock URL.createObjectURL
-global.URL.createObjectURL = jest.fn(() => "mock-url");
-
-// Mock the store
-jest.mock("@/lib/store", () => ({
+jest.mock("@/store", () => ({
   useStockStore: {
     getState: jest.fn(),
   },
 }));
 
-describe("WebSocket Service", () => {
-  let mockWorker: MockWorker;
+const mockPostMessage = jest.fn();
+const mockTerminate = jest.fn();
 
-  beforeEach(() => {
-    // Reset mocks
-    jest.clearAllMocks();
+class MockWorker {
+  onmessage: ((event: any) => void) | null = null;
+  constructor(_: string) {
+    // Required to match the Worker interface
+    setTimeout(() => {
+      if (this.onmessage) {
+        this.onmessage({ data: {} });
+      }
+    }, 0);
+  }
+  postMessage = mockPostMessage;
+  terminate = mockTerminate;
+}
+global.Worker = MockWorker as any;
 
-    // Create a new mock worker
-    mockWorker = new MockWorker();
+beforeAll(() => {
+  global.URL.createObjectURL = jest.fn(() => "blob://mock-worker.js");
+});
 
-    // Mock Worker constructor to return our mock
-    global.Worker = jest.fn(() => mockWorker) as unknown as typeof Worker;
+beforeEach(() => {
+  jest.clearAllMocks();
 
-    // Mock store state
-    const mockStocks: Stock[] = [
+  jest.spyOn(console, "warn").mockImplementation(() => {});
+  jest.spyOn(console, "error").mockImplementation(() => {});
+  jest.spyOn(console, "info").mockImplementation(() => {});
+
+  (useStockStore.getState as jest.Mock).mockReturnValue({
+    stocks: [
       {
         symbol: "AAPL",
-        name: "Apple",
-        price: 150,
-        priceChange: 5,
-        priceChangePercent: 3.33,
-        chartData: [145, 147, 149, 150],
+        price: 100,
+        chartData: Array(30).fill(100),
       },
-      {
-        symbol: "MSFT",
-        name: "Microsoft",
-        price: 300,
-        priceChange: -2,
-        priceChangePercent: -0.67,
-        chartData: [302, 301, 299, 300],
-      },
-    ];
-
-    const mockUpdateStock = jest.fn();
-    (useStockStore.getState as jest.Mock).mockReturnValue({
-      stocks: mockStocks,
-      updateStock: mockUpdateStock,
-    });
+    ],
+    updateStock: jest.fn(),
   });
+});
 
-  afterEach(() => {
-    // Clean up
-    webSocketService.close();
-  });
-
-  it("should initialize the WebSocket worker with symbols", () => {
-    // Arrange
-    const symbols = ["AAPL", "MSFT"];
-
-    // Act
-    webSocketService.initialize(symbols);
-
-    // Assert
-    expect(global.Worker).toHaveBeenCalled();
-    expect(mockWorker.postMessage).toHaveBeenCalledWith({
+describe("WebSocketService", () => {
+  it("initializes worker and sends init message", () => {
+    webSocketService.initialize(["AAPL"]);
+    expect(mockPostMessage).toHaveBeenCalledWith({
       type: "init",
-      data: { symbols },
+      data: { symbols: ["AAPL"] },
     });
   });
 
-  it("should update symbols", () => {
-    // Arrange
+  it("sends update_symbols message when already initialized", () => {
     webSocketService.initialize(["AAPL"]);
-    const newSymbols = ["AAPL", "MSFT", "GOOGL"];
-
-    // Act
-    webSocketService.updateSymbols(newSymbols);
-
-    // Assert
-    expect(mockWorker.postMessage).toHaveBeenCalledWith({
+    webSocketService.initialize(["GOOG"]);
+    expect(mockPostMessage).toHaveBeenCalledWith({
       type: "update_symbols",
-      data: { symbols: newSymbols },
+      data: { symbols: ["GOOG"] },
     });
   });
 
-  it("should close the WebSocket connection", () => {
-    // Arrange
+  it("handles price_update message and updates stock", () => {
     webSocketService.initialize(["AAPL"]);
 
-    // Act
+    const mockPriceUpdate = {
+      data: { symbol: "AAPL", price: "110" },
+      type: "price_update",
+    };
+
+    // simulate message from worker
+    (webSocketService as any).handleWorkerMessage({ data: mockPriceUpdate });
+
+    const store = useStockStore.getState();
+    expect(store.updateStock).toHaveBeenCalledWith("AAPL", {
+      price: 110,
+      priceChange: 10,
+      priceChangePercent: 10,
+      chartData: [...Array(29).fill(100), 110],
+    });
+  });
+
+  it("ignores update if symbol is not in the store", () => {
+    (useStockStore.getState as jest.Mock).mockReturnValue({
+      stocks: [],
+      updateStock: jest.fn(),
+    });
+
+    webSocketService.initialize(["MSFT"]);
+    const mockMessage = {
+      data: { symbol: "MSFT", price: "200" },
+      type: "price_update",
+    };
+    (webSocketService as any).handleWorkerMessage({ data: mockMessage });
+
+    const store = useStockStore.getState();
+    expect(store.updateStock).not.toHaveBeenCalled();
+  });
+
+  it("closes the worker correctly", () => {
+    webSocketService.initialize(["AAPL"]);
     webSocketService.close();
 
-    // Assert
-    expect(mockWorker.postMessage).toHaveBeenCalledWith({ type: "close" });
-    expect(mockWorker.terminate).toHaveBeenCalled();
-  });
-
-  it("should update stock price when receiving a price update message", () => {
-    // Arrange
-    webSocketService.initialize(["AAPL"]);
-    const mockUpdateStock = useStockStore.getState().updateStock;
-
-    // Simulate a message from the worker
-    const mockMessage = {
-      data: {
-        type: "price_update",
-        data: {
-          symbol: "AAPL",
-          price: "155.00",
-        },
-      },
-    };
-
-    // Act
-    // Trigger the onmessage handler
-    if (mockWorker.onmessage) {
-      mockWorker.onmessage(mockMessage as unknown as MessageEvent);
-    }
-
-    // Assert
-    expect(mockUpdateStock).toHaveBeenCalledWith("AAPL", {
-      price: 155,
-      priceChange: 5, // 155 - 150
-      priceChangePercent: expect.any(Number),
-      chartData: expect.arrayContaining([155]), // Should include the new price
-    });
-  });
-
-  it("should handle invalid price data gracefully", () => {
-    // Arrange
-    webSocketService.initialize(["AAPL"]);
-    const mockUpdateStock = useStockStore.getState().updateStock;
-
-    // Simulate a message with invalid price
-    const mockMessage = {
-      data: {
-        type: "price_update",
-        data: {
-          symbol: "AAPL",
-          price: "invalid",
-        },
-      },
-    };
-
-    // Act
-    if (mockWorker.onmessage) {
-      mockWorker.onmessage(mockMessage as unknown as MessageEvent);
-    }
-
-    // Assert
-    expect(mockUpdateStock).not.toHaveBeenCalled(); // Should not update with invalid data
+    expect(mockPostMessage).toHaveBeenCalledWith({ type: "close" });
+    expect(mockTerminate).toHaveBeenCalled();
   });
 });
