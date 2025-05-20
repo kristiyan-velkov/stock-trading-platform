@@ -1,125 +1,147 @@
-// Define the WebSocket connection
-let socket = null;
-let reconnectTimer = null;
-let symbols = [];
+const TWELVE_DATA_API_KEY = (self as any).TWELVE_DATA_API_KEY as string;
 
-// Initialize the WebSocket connection
-function initWebSocket(stockSymbols) {
-  symbols = stockSymbols;
+let socket: WebSocket | null = null;
+let reconnectTimer: ReturnType<typeof setTimeout> | null = null;
+let heartbeatInterval: ReturnType<typeof setInterval> | null = null;
+let symbols: string[] = [];
+let isConnecting = false;
+const reconnectDelay = 5000;
 
-  // Close existing connection if any
-  if (socket) {
-    socket.close();
-  }
+type MessageFromMain =
+  | { type: "init"; data: { symbols: string[] } }
+  | { type: "update_symbols"; data: { symbols: string[] } }
+  | { type: "close" };
 
-  // Create a new WebSocket connection
-  socket = new WebSocket(
-    `wss://ws.twelvedata.com/v1/quotes/price?apikey=${process.env.NEXT_PUBLIC_TWELVE_DATA_API_KEY}`
-  );
+type MessageToMain = {
+  type: "price_update";
+  data: Record<string, any>;
+};
 
-  // Connection opened
-  socket.addEventListener("open", () => {
-    console.log("WebSocket connection established");
-
-    // Subscribe to stock symbols
-    if (socket && socket.readyState === WebSocket.OPEN) {
-      const subscribeMsg = {
+function subscribeToSymbols(): void {
+  if (socket?.readyState === WebSocket.OPEN && symbols.length > 0) {
+    socket.send(
+      JSON.stringify({
         action: "subscribe",
-        params: {
-          symbols: symbols.join(","),
-        },
-      };
-      socket.send(JSON.stringify(subscribeMsg));
-    }
-  });
-
-  // Listen for messages
-  socket.addEventListener("message", (event) => {
-    try {
-      const data = JSON.parse(event.data);
-
-      // Forward the data to the main thread
-      self.postMessage({
-        type: "price_update",
-        data: data,
-      });
-    } catch (error) {
-      console.error("Error parsing WebSocket message:", error);
-    }
-  });
-
-  // Connection closed
-  socket.addEventListener("close", (event) => {
-    console.log("WebSocket connection closed:", event.code, event.reason);
-
-    // Attempt to reconnect after a delay
-    if (!event.wasClean) {
-      if (reconnectTimer) {
-        clearTimeout(reconnectTimer);
-      }
-      reconnectTimer = self.setTimeout(() => {
-        initWebSocket(symbols);
-      }, 5000);
-    }
-  });
-
-  // Connection error
-  socket.addEventListener("error", (error) => {
-    console.error("WebSocket error:", error);
-  });
+        params: { symbols: symbols.join(",") },
+      })
+    );
+  }
 }
 
-// Handle messages from the main thread
-self.addEventListener("message", (event) => {
-  const { type, data } = event.data;
+function unsubscribeAllSymbols(): void {
+  if (socket?.readyState === WebSocket.OPEN) {
+    socket.send(
+      JSON.stringify({
+        action: "unsubscribe",
+        params: { symbols: "*" },
+      })
+    );
+  }
+}
 
-  switch (type) {
+function initWebSocket(stockSymbols: string[]): void {
+  if (isConnecting) return;
+
+  symbols = stockSymbols;
+  isConnecting = true;
+
+  cleanupSocket();
+
+  socket = new WebSocket(
+    `wss://ws.twelvedata.com/v1/quotes/price?apikey=${TWELVE_DATA_API_KEY}`
+  );
+
+  socket.addEventListener("open", handleOpen);
+  socket.addEventListener("message", handleMessage);
+  socket.addEventListener("close", handleClose);
+  socket.addEventListener("error", handleError);
+}
+
+function handleOpen(): void {
+  isConnecting = false;
+  console.log("[WS] Connection opened");
+
+  subscribeToSymbols();
+
+  clearInterval(heartbeatInterval!);
+  heartbeatInterval = setInterval(() => {
+    if (socket?.readyState === WebSocket.OPEN) {
+      socket.send(JSON.stringify({ action: "heartbeat" }));
+    }
+  }, 30_000);
+}
+
+function handleMessage(event: MessageEvent<string>): void {
+  try {
+    const data = JSON.parse(event.data);
+    const message: MessageToMain = { type: "price_update", data };
+    postMessage(message);
+  } catch (err) {
+    console.error("[WS] JSON parse error:", err);
+  }
+}
+
+function handleClose(event: CloseEvent): void {
+  console.warn("[WS] Connection closed:", event.code, event.reason);
+  isConnecting = false;
+
+  clearInterval(heartbeatInterval!);
+  heartbeatInterval = null;
+
+  if (!event.wasClean) {
+    reconnectTimer = setTimeout(() => {
+      console.log("[WS] Attempting reconnect...");
+      initWebSocket(symbols);
+    }, reconnectDelay);
+  }
+}
+
+function handleError(err: Event): void {
+  console.error("[WS] Error:", err);
+  isConnecting = false;
+}
+
+function cleanupSocket(): void {
+  if (socket) {
+    socket.removeEventListener("open", handleOpen);
+    socket.removeEventListener("message", handleMessage);
+    socket.removeEventListener("close", handleClose);
+    socket.removeEventListener("error", handleError);
+    socket.close();
+    socket = null;
+  }
+
+  if (reconnectTimer) {
+    clearTimeout(reconnectTimer);
+    reconnectTimer = null;
+  }
+
+  if (heartbeatInterval) {
+    clearInterval(heartbeatInterval);
+    heartbeatInterval = null;
+  }
+}
+
+self.addEventListener("message", (event: MessageEvent<MessageFromMain>) => {
+  const message = event.data;
+
+  switch (message.type) {
     case "init":
-      // Initialize WebSocket with symbols
-      initWebSocket(data.symbols);
+      initWebSocket(message.data.symbols);
       break;
 
     case "update_symbols":
-      // Update the symbols to subscribe to
-      symbols = data.symbols;
-
-      // Reconnect with new symbols
-      if (socket && socket.readyState === WebSocket.OPEN) {
-        // Unsubscribe from current symbols
-        const unsubscribeMsg = {
-          action: "unsubscribe",
-          params: {
-            symbols: "*",
-          },
-        };
-        socket.send(JSON.stringify(unsubscribeMsg));
-
-        // Subscribe to new symbols
-        const subscribeMsg = {
-          action: "subscribe",
-          params: {
-            symbols: symbols.join(","),
-          },
-        };
-        socket.send(JSON.stringify(subscribeMsg));
+      symbols = message.data.symbols;
+      if (socket?.readyState === WebSocket.OPEN) {
+        unsubscribeAllSymbols();
+        subscribeToSymbols();
       } else {
-        // If socket is not open, initialize it
         initWebSocket(symbols);
       }
       break;
 
     case "close":
-      // Close the WebSocket connection
-      if (socket) {
-        socket.close();
-        socket = null;
-      }
-
-      // Clear reconnect timer
-      if (reconnectTimer) {
-        clearTimeout(reconnectTimer);
-        reconnectTimer = null;
-      }
+      cleanupSocket();
       break;
   }
 });

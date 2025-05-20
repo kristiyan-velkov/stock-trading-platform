@@ -1,14 +1,13 @@
 import type React from "react";
 import type { Metadata } from "next";
 import { Inter } from "next/font/google";
-import "./globals.css";
+import "./globals.scss";
 
 const inter = Inter({ subsets: ["latin"] });
 
 export const metadata: Metadata = {
   title: "Stock Trading Platform",
   description: "A comprehensive stock trading platform with real-time data",
-  generator: "v0.dev",
 };
 
 export default function RootLayout({

@@ -1,9 +1,6 @@
-"use client";
-
-import { cn } from "@/lib/utils";
+import { cn } from "@/lib/utils/clsx-utils";
 import type { Stock } from "@/lib/types";
 import { MiniChart } from "@/components/mini-chart";
-import Image from "next/image";
 import { StockLogo } from "./ui/stock-logo";
 
 interface WatchlistItemProps {
@@ -20,7 +17,6 @@ export function WatchlistItem({
   const isPositive = stock.priceChange >= 0;
   const priceColor = isPositive ? "text-green-500" : "text-red-500";
 
-  // Format price and changes, ensuring we don't display NaN
   const formattedPrice = isNaN(stock.price) ? "0.00" : stock.price.toFixed(2);
   const formattedChange = isNaN(stock.priceChange)
     ? "0.00"
@@ -39,12 +35,6 @@ export function WatchlistItem({
       role="listitem"
       aria-selected={isSelected}
       tabIndex={0}
-      onKeyDown={(e) => {
-        if (e.key === "Enter" || e.key === " ") {
-          onClick();
-          e.preventDefault();
-        }
-      }}
     >
       <div className="flex items-start gap-3 mb-2">
         <div className="w-10 h-10 rounded-full overflow-hidden bg-gray-100 flex items-center justify-center">
@@ -76,7 +66,6 @@ export function WatchlistItem({
         data={stock.chartData}
         color={isPositive ? "#22c55e" : "#ef4444"}
         height={40}
-        aria-hidden="true"
       />
     </div>
   );

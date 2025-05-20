@@ -1,8 +1,7 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
-import { useTheme } from "next-themes";
-import { Loader2 } from "lucide-react";
+import { useEffect, useRef, useState, useId, MutableRefObject } from "react";
+import { Loader } from "lucide-react";
 
 declare global {
   interface Window {
@@ -16,24 +15,55 @@ interface TradingViewChartProps {
   "aria-label"?: string;
 }
 
+function destroyWidget(ref: MutableRefObject<any>) {
+  if (ref.current?.remove) {
+    try {
+      ref.current.remove();
+    } catch (e) {
+      console.warn("Error destroying TradingView widget:", e);
+    }
+  }
+  ref.current = null;
+}
+
+function ChartLoader() {
+  return (
+    <div className="absolute inset-0 flex items-center justify-center bg-background/50 z-10">
+      <div className="flex flex-col items-center gap-2">
+        <Loader className="h-8 w-8 animate-spin text-primary" />
+        <p className="text-sm text-muted-foreground">Loading chart...</p>
+      </div>
+    </div>
+  );
+}
+
+function ChartError({ message }: { message: string }) {
+  return (
+    <div className="absolute inset-0 flex items-center justify-center bg-background/50 z-10">
+      <div className="bg-destructive/10 text-destructive p-4 rounded-md">
+        {message}
+      </div>
+    </div>
+  );
+}
+
 export function TradingViewChart({
   symbol,
   interval = "D",
   "aria-label": ariaLabel,
-}: TradingViewChartProps) {
+}: Readonly<TradingViewChartProps>) {
   const containerRef = useRef<HTMLDivElement>(null);
   const widgetRef = useRef<any>(null);
-  const { theme } = useTheme();
+  const containerId = useId();
+
   const [scriptLoaded, setScriptLoaded] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
-  // Load TradingView widget script
   useEffect(() => {
     if (typeof window === "undefined") return;
 
-    // Check if script is already loaded
-    if (window.TradingView) {
+    if (window.TradingView?.widget) {
       setScriptLoaded(true);
       return;
     }
@@ -43,50 +73,38 @@ export function TradingViewChart({
     script.async = true;
     script.onload = () => setScriptLoaded(true);
     script.onerror = () => {
-      setError(
-        "Failed to load TradingView chart. Please check your internet connection."
-      );
+      setError("Failed to load chart script.");
       setIsLoading(false);
     };
-    document.head.appendChild(script);
 
+    document.head.appendChild(script);
     return () => {
-      // Only remove the script if we added it
-      if (!window.TradingView) {
-        document.head.removeChild(script);
+      if (script.parentNode) {
+        script.parentNode.removeChild(script);
       }
     };
   }, []);
 
-  // Initialize or recreate widget when symbol, interval, or theme changes
   useEffect(() => {
-    if (!containerRef.current || !scriptLoaded || !window.TradingView) return;
+    if (!containerRef.current || !scriptLoaded || !window.TradingView?.widget)
+      return;
 
+    containerRef.current.id = containerId;
+
+    destroyWidget(widgetRef);
     setIsLoading(true);
-
-    // Clean up previous widget if it exists
-    if (widgetRef.current) {
-      try {
-        widgetRef.current.remove();
-        widgetRef.current = null;
-      } catch (error) {
-        console.error("Error removing TradingView widget:", error);
-      }
-    }
-
-    const isDarkTheme = theme === "dark";
+    setError(null);
 
     try {
-      // Create a new widget with the updated symbol
       widgetRef.current = new window.TradingView.widget({
         autosize: true,
-        symbol: symbol,
-        interval: interval,
+        symbol,
+        interval,
         timezone: "Etc/UTC",
-        theme: isDarkTheme ? "dark" : "light",
-        style: "1", // Candlestick chart
+        theme: "light",
+        style: "1",
         locale: "en",
-        toolbar_bg: isDarkTheme ? "#1e1e1e" : "#f8f9fa",
+        toolbar_bg: "#f8f9fa",
         enable_publishing: false,
         withdateranges: true,
         hide_side_toolbar: false,
@@ -94,17 +112,13 @@ export function TradingViewChart({
         details: true,
         hotlist: true,
         calendar: true,
-        studies: [
-          "RSI@tv-basicstudies",
-          "MASimple@tv-basicstudies",
-          "MACD@tv-basicstudies",
-        ],
-        container_id: containerRef.current.id,
+        studies: ["RSI@tv-basicstudies"],
+        container_id: containerId,
         show_popup_button: true,
         popup_width: "1000",
         popup_height: "650",
         loading_screen: {
-          backgroundColor: isDarkTheme ? "#1e1e1e" : "#ffffff",
+          backgroundColor: "#ffffff",
         },
         disabled_features: ["use_localstorage_for_settings"],
         enabled_features: [
@@ -117,66 +131,29 @@ export function TradingViewChart({
           "mainSeriesProperties.candleStyle.wickUpColor": "#22c55e",
           "mainSeriesProperties.candleStyle.wickDownColor": "#ef4444",
         },
-        // Add onReady callback to handle when chart is ready
-        onReady: () => {
-          setIsLoading(false);
-          setError(null);
-        },
       });
+
+      const timeout = setTimeout(() => setIsLoading(false), 2000);
+      return () => clearTimeout(timeout);
     } catch (err) {
-      console.error("Error creating TradingView widget:", err);
-      setError("Failed to initialize chart. Please try again later.");
+      console.error("Widget init error:", err);
+      setError("Chart failed to load.");
       setIsLoading(false);
     }
-
-    return () => {
-      // Clean up widget on unmount or before recreating
-      if (widgetRef.current) {
-        try {
-          widgetRef.current.remove();
-          widgetRef.current = null;
-        } catch (error) {
-          console.error("Error removing TradingView widget:", error);
-        }
-      }
-    };
-  }, [symbol, interval, theme, scriptLoaded]);
+  }, [symbol, interval, scriptLoaded, containerId]);
 
   return (
-    <div
+    <section
       className="relative w-full h-full"
-      role="region"
-      aria-label={ariaLabel || `${symbol} stock chart`}
+      aria-labelledby={`chart-title-${containerId}`}
     >
-      {isLoading && (
-        <div
-          className="absolute inset-0 flex items-center justify-center bg-background/50 z-10"
-          aria-live="polite"
-        >
-          <div className="flex flex-col items-center gap-2">
-            <Loader2
-              className="h-8 w-8 animate-spin text-primary"
-              aria-hidden="true"
-            />
-            <p className="text-sm text-muted-foreground">Loading chart...</p>
-          </div>
-        </div>
-      )}
-      {error && (
-        <div
-          className="absolute inset-0 flex items-center justify-center bg-background/50 z-10"
-          role="alert"
-        >
-          <div className="bg-destructive/10 text-destructive p-4 rounded-md">
-            {error}
-          </div>
-        </div>
-      )}
-      <div
-        id="tradingview-widget-container"
-        ref={containerRef}
-        className="w-full h-full"
-      />
-    </div>
+      <h2 id={`chart-title-${containerId}`} className="sr-only">
+        {ariaLabel ?? `${symbol} stock chart`}
+      </h2>
+
+      {isLoading && <ChartLoader />}
+      {error && <ChartError message={error} />}
+      <div ref={containerRef} className="w-full h-full" />
+    </section>
   );
 }

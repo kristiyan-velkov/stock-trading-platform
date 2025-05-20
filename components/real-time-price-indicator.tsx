@@ -1,42 +1,55 @@
-"use client"
-
-import { useState, useEffect } from "react"
-import { cn } from "@/lib/utils"
+import { useState, useEffect } from "react";
+import { cn } from "@/lib/utils/clsx-utils";
 
 interface RealTimePriceIndicatorProps {
-  price: number
-  priceChange: number
+  price: number;
+  priceChange: number;
 }
 
-export function RealTimePriceIndicator({ price, priceChange }: RealTimePriceIndicatorProps) {
-  const [isUpdating, setIsUpdating] = useState(false)
-  const [prevPrice, setPrevPrice] = useState(price)
+export function RealTimePriceIndicator({
+  price,
+  priceChange,
+}: Readonly<RealTimePriceIndicatorProps>) {
+  const [prevPrice, setPrevPrice] = useState(price);
+  const [isAnimating, setIsAnimating] = useState(false);
 
-  // Ensure price and priceChange are valid numbers
-  const validPrice = isNaN(price) ? 0 : price
-  const validPriceChange = isNaN(priceChange) ? 0 : priceChange
+  const validPrice = Number.isFinite(price) ? price : 0;
+  const validPriceChange = Number.isFinite(priceChange) ? priceChange : 0;
 
   useEffect(() => {
-    // If price has changed, show the update animation
     if (validPrice !== prevPrice) {
-      setIsUpdating(true)
-
-      // Reset the animation after a short delay
-      const timer = setTimeout(() => {
-        setIsUpdating(false)
-        setPrevPrice(validPrice)
-      }, 1000)
-
-      return () => clearTimeout(timer)
+      setIsAnimating(true);
+      const timeout = setTimeout(() => {
+        setIsAnimating(false);
+        setPrevPrice(validPrice);
+      }, 1000);
+      return () => clearTimeout(timeout);
     }
-  }, [validPrice, prevPrice])
+  }, [validPrice, prevPrice]);
 
-  const priceChangeColor = validPriceChange >= 0 ? "text-green-500" : "text-red-500"
-  const updateColor = validPrice > prevPrice ? "bg-green-100" : validPrice < prevPrice ? "bg-red-100" : ""
+  const priceChangeColor =
+    validPriceChange > 0
+      ? "text-green-500"
+      : validPriceChange < 0
+      ? "text-red-500"
+      : "text-muted-foreground";
+
+  const flashBackground =
+    validPrice > prevPrice
+      ? "bg-green-100"
+      : validPrice < prevPrice
+      ? "bg-red-100"
+      : "";
 
   return (
-    <div className={cn("transition-colors duration-1000", isUpdating && updateColor)} aria-live="polite">
+    <div
+      className={cn(
+        "transition-colors duration-1000 rounded-sm px-1",
+        isAnimating && flashBackground
+      )}
+      aria-live="polite"
+    >
       <span className={priceChangeColor}>${validPrice.toFixed(2)}</span>
     </div>
-  )
+  );
 }
