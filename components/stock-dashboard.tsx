@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, useCallback, useMemo } from "react";
 import { useStockStore } from "@/store";
 import type { Stock } from "@/lib/types";
 import { webSocketService } from "@/lib/websocket/websocket-service";
@@ -12,11 +12,13 @@ import { PortfolioTable } from "@/components/portfolio-table";
 import { StockTabs } from "@/components/stock-tabs";
 import { ChartControls } from "@/components/chart-controls";
 import { TradingViewChart } from "@/components/trading-view-chart";
-import { Loader } from "lucide-react";
+import { LoadingFallback } from "@/components/ui/loading-fallback";
 
 interface StockDashboardProps {
   initialStocks: Stock[];
 }
+
+type Interval = "1m" | "5m" | "15m" | "1h" | "4h" | "D" | "W" | "M";
 
 export default function StockDashboard({
   initialStocks,
@@ -24,84 +26,102 @@ export default function StockDashboard({
   const { setStocks, setSelectedStock, stocks, selectedStock } =
     useStockStore();
   const [tabStocks, setTabStocks] = useState<Stock[]>([]);
-  const [chartInterval, setChartInterval] = useState("D");
+  const [chartInterval, setChartInterval] = useState<Interval>("D");
   const symbolsRef = useRef<string[]>([]);
 
-  const initializeDashboard = (stocks: Stock[]) => {
-    setStocks(stocks);
-    setSelectedStock(stocks[0]);
-    setTabStocks([stocks[0]]);
+  const stockSymbols = useMemo(
+    () => stocks.map((stock) => stock.symbol),
+    [stocks]
+  );
 
-    const symbols = stocks.map((s) => s.symbol);
-    symbolsRef.current = symbols;
-    webSocketService.initialize(symbols);
-  };
+  const initializeDashboard = useCallback(
+    (stocks: Stock[]) => {
+      setStocks(stocks);
+      setSelectedStock(stocks[0]);
+      setTabStocks([stocks[0]]);
+
+      const symbols = stocks.map((s) => s.symbol);
+      symbolsRef.current = symbols;
+      webSocketService.initialize(symbols);
+    },
+    [setStocks, setSelectedStock]
+  );
 
   useEffect(() => {
     if (initialStocks.length > 0) {
       initializeDashboard(initialStocks);
     }
-
     return () => {
       webSocketService.close();
     };
-  }, [initialStocks]);
+  }, [initialStocks, initializeDashboard]);
 
   useEffect(() => {
-    const symbols = stocks.map((stock) => stock.symbol);
-    symbolsRef.current = symbols;
-    webSocketService.updateSymbols(symbols);
-  }, [stocks]);
+    symbolsRef.current = stockSymbols;
+    webSocketService.updateSymbols(stockSymbols);
+  }, [stockSymbols]);
 
   useEffect(() => {
     const interval = setInterval(async () => {
       const symbols = symbolsRef.current;
-      if (symbols.length > 0) {
-        try {
-          const updatedData = await fetchStockData(symbols);
-          if (updatedData.length > 0) {
-            const validated = updatedData.map(sanitizeStock);
+      if (!symbols.length) return;
 
-            setStocks(validated);
-            setTabStocks((prev) =>
-              prev.map(
-                (tabStock) =>
-                  validated.find((s) => s.symbol === tabStock.symbol) ||
-                  tabStock
-              )
-            );
-          }
-        } catch (e) {
-          console.error("Polling error:", e);
+      try {
+        const updatedData = await fetchStockData(symbols);
+        if (updatedData.length > 0) {
+          const validated = updatedData.map(sanitizeStock);
+          setStocks(validated);
+
+          setTabStocks((prev) =>
+            prev.map(
+              (tabStock) =>
+                validated.find((s) => s.symbol === tabStock.symbol) || tabStock
+            )
+          );
         }
+      } catch (e) {
+        console.error("Polling error:", e);
       }
     }, 10000);
 
     return () => clearInterval(interval);
   }, [setStocks]);
 
-  const handleSelectStock = (stock: Stock) => {
-    setSelectedStock(stock);
+  const handleSelectStock = useCallback(
+    (stock: Stock) => {
+      setSelectedStock(stock);
 
-    if (!tabStocks.some((s) => s.symbol === stock.symbol)) {
-      setTabStocks((prev) =>
-        prev.length >= 5 ? [...prev.slice(1), stock] : [...prev, stock]
+      if (!tabStocks.some((s) => s.symbol === stock.symbol)) {
+        setTabStocks((prev) =>
+          prev.length >= 5 ? [...prev.slice(1), stock] : [...prev, stock]
+        );
+      }
+    },
+    [tabStocks, setSelectedStock]
+  );
+
+  const handleRemoveStock = useCallback(
+    (stockToRemove: Stock) => {
+      if (tabStocks.length <= 1) return;
+
+      const filtered = tabStocks.filter(
+        (s) => s.symbol !== stockToRemove.symbol
       );
-    }
-  };
+      setTabStocks(filtered);
 
-  const handleRemoveStock = (stockToRemove: Stock) => {
-    if (tabStocks.length <= 1) return;
+      if (
+        selectedStock?.symbol === stockToRemove.symbol &&
+        filtered.length > 0
+      ) {
+        setSelectedStock(filtered[filtered.length - 1]);
+      }
+    },
+    [tabStocks, selectedStock, setSelectedStock]
+  );
 
-    const filtered = tabStocks.filter((s) => s.symbol !== stockToRemove.symbol);
-    setTabStocks(filtered);
-
-    if (selectedStock?.symbol === stockToRemove.symbol && filtered.length > 0) {
-      setSelectedStock(filtered[filtered.length - 1]);
-    }
-  };
-
-  const handleIntervalChange = (interval: string) => setChartInterval(interval);
+  const handleIntervalChange = useCallback((interval: Interval) => {
+    setChartInterval(interval);
+  }, []);
 
   return (
     <div className="flex flex-col h-screen">
@@ -137,15 +157,15 @@ export default function StockDashboard({
                     aria-label={`${selectedStock.name} stock chart with ${chartInterval} interval`}
                   />
                 ) : (
-                  <div className="h-full flex items-center justify-center text-muted-foreground">
-                    <Loader className="h-5 w-5 animate-spin mr-2" />
-                    Loading stock chart...
-                  </div>
+                  <LoadingFallback
+                    message="Loading stock dashboard..."
+                    fullScreen
+                  />
                 )}
               </div>
             </div>
           </section>
-          <section aria-label="Portfolio holdings">
+          <section aria-label="Portfolio holdings" className="mx-4 mb-5">
             <PortfolioTable stocks={stocks} />
           </section>
         </section>

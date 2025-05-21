@@ -5,10 +5,12 @@ import "./globals.scss";
 
 const inter = Inter({ subsets: ["latin"] });
 
-export const metadata: Metadata = {
-  title: "Stock Trading Platform",
-  description: "A comprehensive stock trading platform with real-time data",
-};
+export function generateMetadata(): Metadata {
+  return {
+    title: "Stock Trading Platform",
+    description: "A comprehensive stock trading platform with real-time data",
+  };
+}
 
 export default function RootLayout({
   children,
