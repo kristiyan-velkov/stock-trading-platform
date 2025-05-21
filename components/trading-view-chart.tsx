@@ -112,7 +112,6 @@ export function TradingViewChart({
         details: true,
         hotlist: true,
         calendar: true,
-        studies: ["RSI@tv-basicstudies"],
         container_id: containerId,
         show_popup_button: true,
         popup_width: "1000",
