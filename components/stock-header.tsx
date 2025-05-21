@@ -16,8 +16,8 @@ export function StockHeader() {
       <div className="flex items-center gap-2">
         <div className="h-8">
           <Image
-            src="./trading-212-logo.png"
-            alt="Trading 212 Logo"
+            src="./logo.png"
+            alt="App Logo"
             width={120}
             height={30}
             className="h-full w-auto"
