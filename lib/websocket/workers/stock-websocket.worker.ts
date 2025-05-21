@@ -17,7 +17,7 @@ type MessageToMain = {
   data: Record<string, any>;
 };
 
-function subscribeToSymbols(): void {
+function subscribeToSymbols() {
   if (socket?.readyState === WebSocket.OPEN && symbols.length > 0) {
     socket.send(
       JSON.stringify({
@@ -28,23 +28,18 @@ function subscribeToSymbols(): void {
   }
 }
 
-function unsubscribeAllSymbols(): void {
+function unsubscribeAllSymbols() {
   if (socket?.readyState === WebSocket.OPEN) {
     socket.send(
-      JSON.stringify({
-        action: "unsubscribe",
-        params: { symbols: "*" },
-      })
+      JSON.stringify({ action: "unsubscribe", params: { symbols: "*" } })
     );
   }
 }
 
-function initWebSocket(stockSymbols: string[]): void {
+function initWebSocket(stockSymbols: string[]) {
   if (isConnecting) return;
-
   symbols = stockSymbols;
   isConnecting = true;
-
   cleanupSocket();
 
   socket = new WebSocket(
@@ -57,10 +52,9 @@ function initWebSocket(stockSymbols: string[]): void {
   socket.addEventListener("error", handleError);
 }
 
-function handleOpen(): void {
+function handleOpen() {
   isConnecting = false;
-  console.log("[WS] Connection opened");
-
+  console.log("[WS] Connected");
   subscribeToSymbols();
 
   clearInterval(heartbeatInterval!);
@@ -71,7 +65,7 @@ function handleOpen(): void {
   }, 30_000);
 }
 
-function handleMessage(event: MessageEvent<string>): void {
+function handleMessage(event: MessageEvent<string>) {
   try {
     const data = JSON.parse(event.data);
     const message: MessageToMain = { type: "price_update", data };
@@ -81,10 +75,9 @@ function handleMessage(event: MessageEvent<string>): void {
   }
 }
 
-function handleClose(event: CloseEvent): void {
+function handleClose(event: CloseEvent) {
   console.warn("[WS] Connection closed:", event.code, event.reason);
   isConnecting = false;
-
   clearInterval(heartbeatInterval!);
   heartbeatInterval = null;
 
@@ -96,12 +89,12 @@ function handleClose(event: CloseEvent): void {
   }
 }
 
-function handleError(err: Event): void {
+function handleError(err: Event) {
   console.error("[WS] Error:", err);
   isConnecting = false;
 }
 
-function cleanupSocket(): void {
+function cleanupSocket() {
   if (socket) {
     socket.removeEventListener("open", handleOpen);
     socket.removeEventListener("message", handleMessage);

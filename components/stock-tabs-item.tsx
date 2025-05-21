@@ -1,3 +1,5 @@
+"use client";
+
 import { memo } from "react";
 import { X } from "lucide-react";
 import { cn } from "@/lib/utils/clsx-utils";

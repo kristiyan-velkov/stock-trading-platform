@@ -1,4 +1,4 @@
-import { webSocketService } from "@/lib/server/websocket-service";
+import { webSocketService } from "@/lib/websocket/websocket-service";
 import { useStockStore } from "@/store";
 
 jest.mock("@/store", () => ({

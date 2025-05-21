@@ -1,3 +1,5 @@
+"use server";
+
 import { Loader } from "lucide-react";
 
 const LoadingFallback = () => (

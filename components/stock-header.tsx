@@ -1,3 +1,5 @@
+"use client";
+
 import { useStockStore } from "@/store";
 import { Home } from "lucide-react";
 import Image from "next/image";

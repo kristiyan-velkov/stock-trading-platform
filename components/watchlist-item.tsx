@@ -1,3 +1,5 @@
+"use client";
+
 import { cn } from "@/lib/utils/clsx-utils";
 import type { Stock } from "@/lib/types";
 import { MiniChart } from "@/components/mini-chart";
@@ -65,7 +67,7 @@ export function WatchlistItem({
       <MiniChart
         data={stock.chartData}
         color={isPositive ? "#22c55e" : "#ef4444"}
-        height={40}
+        height={30}
       />
     </div>
   );

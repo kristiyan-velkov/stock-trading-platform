@@ -1,3 +1,5 @@
+"use server";
+
 import { getInitialStocks } from "@/lib/server/fetch-initial-stocks";
 import StockDashboard from "./stock-dashboard";
 

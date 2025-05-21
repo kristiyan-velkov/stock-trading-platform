@@ -1,3 +1,5 @@
+"use client";
+
 import { Sparklines, SparklinesLine, SparklinesSpots } from "react-sparklines";
 
 interface MiniChartProps {

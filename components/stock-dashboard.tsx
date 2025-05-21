@@ -3,7 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 import { useStockStore } from "@/store";
 import type { Stock } from "@/lib/types";
-import { webSocketService } from "@/lib/server/websocket-service";
+import { webSocketService } from "@/lib/websocket/websocket-service";
 import { fetchStockData } from "@/lib/server/api";
 import { sanitizeStock } from "@/lib/utils/stock";
 import { StockHeader } from "@/components/stock-header";
